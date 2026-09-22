@@ -62,6 +62,25 @@ jobs:
 
           include_re = re.compile(r'#include\s+"([^"]+)"')
           fixed = 0
+          changed = False
+
+          def repl(m, path):
+              global changed, fixed
+              inc = m.group(1)
+              bases = [os.path.dirname(path)] + extra_bases
+              if any(os.path.isfile(os.path.normpath(os.path.join(b, inc))) for b in bases):
+                  return m.group(0)
+              for b in bases:
+                  cand = os.path.normpath(os.path.join(b, inc))
+                  matches = lower_index.get(cand.lower())
+                  if matches:
+                      actual_rel = os.path.relpath(matches[0], b)
+                      actual_rel = actual_rel.replace(os.sep, "/")
+                      print(f"Fixing include in {path}: \"{inc}\" -> \"{actual_rel}\"")
+                      changed = True
+                      fixed += 1
+                      return f'#include "{actual_rel}"'
+              return m.group(0)
 
           for path in all_files:
               if not path.endswith((".cpp", ".h", ".hpp", ".c", ".cc")):
@@ -73,25 +92,7 @@ jobs:
                   continue
 
               changed = False
-              def repl(m):
-                  nonlocal changed, fixed
-                  inc = m.group(1)
-                  bases = [os.path.dirname(path)] + extra_bases
-                  if any(os.path.isfile(os.path.normpath(os.path.join(b, inc))) for b in bases):
-                      return m.group(0)
-                  for b in bases:
-                      cand = os.path.normpath(os.path.join(b, inc))
-                      matches = lower_index.get(cand.lower())
-                      if matches:
-                          actual_rel = os.path.relpath(matches[0], b)
-                          actual_rel = actual_rel.replace(os.sep, "/")
-                          print(f"Fixing include in {path}: \"{inc}\" -> \"{actual_rel}\"")
-                          changed = True
-                          fixed += 1
-                          return f'#include "{actual_rel}"'
-                  return m.group(0)
-
-              new_text = include_re.sub(repl, text)
+              new_text = include_re.sub(lambda m: repl(m, path), text)
               if changed:
                   with open(path, "w", encoding="utf-8") as fh:
                       fh.write(new_text)
