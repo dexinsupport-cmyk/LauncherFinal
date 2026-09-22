@@ -33,6 +33,72 @@ jobs:
           echo "Extracted contents:"
           ls -la "$PROJECT_DIR"
 
+      - name: Auto-fix case-sensitive include mismatches
+        run: |
+          python3 - <<'PYEOF'
+          import os, re
+
+          cpp_root = os.path.join(os.environ["PROJECT_DIR"], "app", "src", "main", "cpp")
+
+          all_files = []
+          for dirpath, _, filenames in os.walk(cpp_root):
+              for fn in filenames:
+                  all_files.append(os.path.join(dirpath, fn))
+
+          lower_index = {}
+          for f in all_files:
+              lower_index.setdefault(f.lower(), []).append(f)
+
+          extra_bases = [
+              os.path.join(cpp_root, "samp"),
+              os.path.join(cpp_root, "samp", "util"),
+              os.path.join(cpp_root, "samp", "vendor"),
+              os.path.join(cpp_root, "samp", "vendor", "armhook"),
+              os.path.join(cpp_root, "samp", "vendor", "imgui"),
+              os.path.join(cpp_root, "samp", "game", "RW"),
+              os.path.join(cpp_root, "samp", "game", "Core"),
+              os.path.join(cpp_root, "opus", "include"),
+          ]
+
+          include_re = re.compile(r'#include\s+"([^"]+)"')
+          fixed = 0
+
+          for path in all_files:
+              if not path.endswith((".cpp", ".h", ".hpp", ".c", ".cc")):
+                  continue
+              try:
+                  with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                      text = fh.read()
+              except Exception:
+                  continue
+
+              changed = False
+              def repl(m):
+                  nonlocal changed, fixed
+                  inc = m.group(1)
+                  bases = [os.path.dirname(path)] + extra_bases
+                  if any(os.path.isfile(os.path.normpath(os.path.join(b, inc))) for b in bases):
+                      return m.group(0)
+                  for b in bases:
+                      cand = os.path.normpath(os.path.join(b, inc))
+                      matches = lower_index.get(cand.lower())
+                      if matches:
+                          actual_rel = os.path.relpath(matches[0], b)
+                          actual_rel = actual_rel.replace(os.sep, "/")
+                          print(f"Fixing include in {path}: \"{inc}\" -> \"{actual_rel}\"")
+                          changed = True
+                          fixed += 1
+                          return f'#include "{actual_rel}"'
+                  return m.group(0)
+
+              new_text = include_re.sub(repl, text)
+              if changed:
+                  with open(path, "w", encoding="utf-8") as fh:
+                      fh.write(new_text)
+
+          print(f"\nTotal includes auto-fixed: {fixed}")
+          PYEOF
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
