@@ -7,7 +7,6 @@ on:
 
 env:
   PROJECT_DIR: extracted/SAMP-Mobile-GTA-2.11
-  ZIP_NAME: SAMP-Mobile-GTA-2_11.zip
 
 jobs:
   build:
@@ -17,9 +16,20 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Extract project zip
+      - name: List repo contents (debug)
         run: |
-          unzip -o "$ZIP_NAME" -d extracted
+          echo "Files in repo root:"
+          ls -la
+
+      - name: Find and extract project zip
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -iname "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No .zip file found in repo!"
+            exit 1
+          fi
+          echo "Found zip: $ZIP_FILE"
+          unzip -o "$ZIP_FILE" -d extracted
           echo "Extracted contents:"
           ls -la "$PROJECT_DIR"
 
